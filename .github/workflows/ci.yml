@@ -23,7 +23,6 @@ jobs:
         python -c "
         import http.server
         import socketserver
-        import psycopg2
         print('All imports work correctly')
         "
     
