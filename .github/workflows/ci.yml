@@ -29,7 +29,7 @@ jobs:
     - name: Validate syntax
       run: |
         python -m py_compile app.py
-        echo "✓ Syntax is valid"
+        echo "Syntax is valid"
     
     - name: Lint Dockerfile
       continue-on-error: true
@@ -38,10 +38,10 @@ jobs:
     
     - name: Build Docker image
       run: |
-        docker build -t ghcr.io/${{ github.repository }}:latest .
+        docker build -t ghcr.io/romandik/devops_4:latest .
     
     - name: Push Docker image
       if: github.event_name == 'push'
       run: |
         echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-        docker push ghcr.io/${{ github.repository }}:latest
+        docker push ghcr.io/romandik/devops_4:latest

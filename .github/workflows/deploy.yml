@@ -28,7 +28,7 @@ jobs:
         
         services:
           app:
-            image: ghcr.io/${{ github.repository }}:latest
+            image: ghcr.io/romandik/devops_4:latest
             ports:
               - "8181:8181"
             depends_on:
@@ -97,7 +97,7 @@ jobs:
         docker-compose down --remove-orphans || true
         
         # 6. Удаляем старый образ приложения (чтобы скачать свежий)
-        docker image rm ghcr.io/${{ github.repository }}:latest 2>/dev/null || true
+        docker image rm ghcr.io/romandik/devops_4:latest 2>/dev/null || true
         
         # 7. Запускаем новый стек
         docker-compose up -d
@@ -113,9 +113,9 @@ jobs:
         docker-compose logs app --tail=10
         
         # 10. Проверяем доступность
-        if curl -s -f http://localhost:8282 > /dev/null; then
+        if curl -s -f http://localhost:8181 > /dev/null; then
           echo "Docker Compose stack deployed successfully!"
-          echo "App URL: http://app.dik.course.prafdin.ru:8282"
+          echo "App URL: http://app.dik.course.prafdin.ru:8181"
           echo "pgAdmin: http://app.dik.course.prafdin.ru:8080"
           echo "pgAdmin credentials: admin@devops.local / admin"
           exit 0
