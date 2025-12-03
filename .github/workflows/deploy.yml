@@ -19,10 +19,17 @@ jobs:
     - name: Deploy Docker Compose stack
       run: |
         ssh -o StrictHostKeyChecking=no -p 2425 vboxuser@course.prafdin.ru 'bash -s' << 'EOF'
-        # 1. Переходим в папку проекта
-        cd /home/vboxuser/devops-app-4 || mkdir -p /home/vboxuser/devops-app-4 && cd /home/vboxuser/devops-app-4
+        set -e  # Выходим при ошибке
         
-        # 2. Копируем файлы Docker Compose
+        # 1. Останавливаем всё на порту 8181 (старая лаба №3)
+        docker stop $(docker ps --filter "publish=8181" -q) 2>/dev/null || true
+        docker rm $(docker ps -a --filter "publish=8181" -q) 2>/dev/null || true
+        
+        # 2. Переходим в папку
+        mkdir -p /home/vboxuser/devops-app-4
+        cd /home/vboxuser/devops-app-4
+        
+        # 3. Создаем docker-compose.yml БЕЗ PGADMIN
         cat > docker-compose.yml << 'COMPOSE'
         version: '3.8'
         
@@ -62,19 +69,6 @@ jobs:
             networks:
               - devops-network
         
-          pgadmin:
-            image: dpage/pgadmin4
-            environment:
-              - PGADMIN_DEFAULT_EMAIL=admin@devops.local
-              - PGADMIN_DEFAULT_PASSWORD=admin
-            ports:
-              - "8080:80"
-            depends_on:
-              - db
-            restart: unless-stopped
-            networks:
-              - devops-network
-        
         volumes:
           postgres_data:
         
@@ -83,45 +77,36 @@ jobs:
             driver: bridge
         COMPOSE
         
-        # 3. Создаем .env файл (опционально)
-        echo "DATABASE_HOST=db" > .env
-        echo "DATABASE_PORT=5432" >> .env
-        echo "DATABASE_NAME=devopsdb" >> .env
-        echo "DATABASE_USER=devopsuser" >> .env
-        echo "DATABASE_PASSWORD=devopspass" >> .env
+        # 4. Логинимся в GHCR (если нужно)
+        # echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
         
-        # 4. Логинимся в GHCR
-        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        # 5. Останавливаем старый стек
+        docker-compose down --remove-orphans 2>/dev/null || true
         
-        # 5. Останавливаем старый стек (если есть)
-        docker-compose down --remove-orphans || true
-        
-        # 6. Удаляем старый образ приложения (чтобы скачать свежий)
-        docker image rm ghcr.io/romandik/devops_4:latest 2>/dev/null || true
-        
-        # 7. Запускаем новый стек
+        # 6. Запускаем новый стек
+        echo "Starting Docker Compose stack..."
         docker-compose up -d
         
-        # 8. Ждем и проверяем
-        sleep 15
+        # 7. Ждём готовности БД
+        echo "Waiting for PostgreSQL to be healthy..."
+        sleep 20
         
-        # 9. Проверяем контейнеры
-        echo "=== Running containers ==="
+        # 8. Проверяем
+        echo "=== Containers status ==="
         docker-compose ps
         
-        echo "=== Application logs ==="
-        docker-compose logs app --tail=10
-        
-        # 10. Проверяем доступность
-        if curl -s -f http://localhost:8181 > /dev/null; then
+        echo "=== Checking application ==="
+        if curl -s -f --retry 3 --retry-delay 5 http://localhost:8181 > /dev/null; then
           echo "Docker Compose stack deployed successfully!"
           echo "App URL: http://app.dik.course.prafdin.ru:8181"
-          echo "pgAdmin: http://app.dik.course.prafdin.ru:8080"
-          echo "pgAdmin credentials: admin@devops.local / admin"
+          echo "PostgreSQL is running with persistent volume"
           exit 0
         else
           echo "Application failed to start"
+          echo "=== Application logs ==="
           docker-compose logs app
+          echo "=== Database logs ==="
+          docker-compose logs db
           exit 1
         fi
         EOF
