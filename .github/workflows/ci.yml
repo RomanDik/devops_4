@@ -1,4 +1,4 @@
-name: CI
+name: CI Docker Compose
 
 on:
   push:
@@ -23,10 +23,8 @@ jobs:
         python -c "
         import http.server
         import socketserver
-        print('✓ All imports work correctly')
-        
-        PORT = 8181
-        print(f'✓ Server would start on port {PORT}')
+        import psycopg2
+        print('All imports work correctly')
         "
     
     - name: Validate syntax
@@ -34,20 +32,17 @@ jobs:
         python -m py_compile app.py
         echo "✓ Syntax is valid"
     
-    # Проверка Dockerfile с hadolint (опционально)
     - name: Lint Dockerfile
-      continue-on-error: true  # не завершать пайплайн при ошибках
+      continue-on-error: true
       run: |
         docker run --rm -i hadolint/hadolint < Dockerfile
     
-    # Сборка Docker образа
     - name: Build Docker image
       run: |
-        docker build -t ghcr.io/romandik/devops_2:latest .
+        docker build -t ghcr.io/${{ github.repository }}:latest .
     
-    # Публикация в GitHub Container Registry
     - name: Push Docker image
       if: github.event_name == 'push'
       run: |
         echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-        docker push ghcr.io/romandik/devops_2:latest
+        docker push ghcr.io/${{ github.repository }}:latest

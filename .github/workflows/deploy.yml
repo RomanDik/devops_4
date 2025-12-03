@@ -1,4 +1,4 @@
-name: CD
+name: CD Docker Compose
 
 on:
   release:
@@ -16,44 +16,112 @@ jobs:
       with:
         ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
     
-    - name: Deploy Docker container
+    - name: Deploy Docker Compose stack
       run: |
         ssh -o StrictHostKeyChecking=no -p 2425 vboxuser@course.prafdin.ru 'bash -s' << 'EOF'
-        # 1. Останавливаем старый systemd сервис (из лабы #2)
-        sudo systemctl stop devops-app.service || true
-        sudo systemctl disable devops-app.service || true
+        # 1. Переходим в папку проекта
+        cd /home/vboxuser/devops-app-4 || mkdir -p /home/vboxuser/devops-app-4 && cd /home/vboxuser/devops-app-4
         
-        # 2. Убиваем процессы на порту 8181
-        sudo pkill -f "python.*app.py" || true
+        # 2. Копируем файлы Docker Compose
+        cat > docker-compose.yml << 'COMPOSE'
+        version: '3.8'
         
-        # 3. Останавливаем старый Docker контейнер
-        docker stop devops-app || true
-        docker rm devops-app || true
+        services:
+          app:
+            image: ghcr.io/${{ github.repository }}:latest
+            ports:
+              - "8181:8181"
+            depends_on:
+              db:
+                condition: service_healthy
+            environment:
+              - DATABASE_HOST=db
+              - DATABASE_PORT=5432
+              - DATABASE_NAME=devopsdb
+              - DATABASE_USER=devopsuser
+              - DATABASE_PASSWORD=devopspass
+              - DEPLOY_TIME=$(date '+%Y-%m-%d %H:%M:%S')
+            restart: unless-stopped
+            networks:
+              - devops-network
+        
+          db:
+            image: postgres:15-alpine
+            environment:
+              - POSTGRES_DB=devopsdb
+              - POSTGRES_USER=devopsuser
+              - POSTGRES_PASSWORD=devopspass
+            volumes:
+              - postgres_data:/var/lib/postgresql/data
+            healthcheck:
+              test: ["CMD-SHELL", "pg_isready -U devopsuser -d devopsdb"]
+              interval: 10s
+              timeout: 5s
+              retries: 5
+            restart: unless-stopped
+            networks:
+              - devops-network
+        
+          pgadmin:
+            image: dpage/pgadmin4
+            environment:
+              - PGADMIN_DEFAULT_EMAIL=admin@devops.local
+              - PGADMIN_DEFAULT_PASSWORD=admin
+            ports:
+              - "8080:80"
+            depends_on:
+              - db
+            restart: unless-stopped
+            networks:
+              - devops-network
+        
+        volumes:
+          postgres_data:
+        
+        networks:
+          devops-network:
+            driver: bridge
+        COMPOSE
+        
+        # 3. Создаем .env файл (опционально)
+        echo "DATABASE_HOST=db" > .env
+        echo "DATABASE_PORT=5432" >> .env
+        echo "DATABASE_NAME=devopsdb" >> .env
+        echo "DATABASE_USER=devopsuser" >> .env
+        echo "DATABASE_PASSWORD=devopspass" >> .env
         
         # 4. Логинимся в GHCR
         echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
         
-        # 5. Скачиваем новый образ
-        docker pull ghcr.io/romandik/devops_2:latest
+        # 5. Останавливаем старый стек (если есть)
+        docker-compose down --remove-orphans || true
         
-        # 6. Запускаем новый контейнер
-        docker run -d \
-          --name devops-app \
-          --restart always \
-          -p 8181:8181 \
-          -e DEPLOY_TIME="$(date '+%Y-%m-%d %H:%M:%S')" \
-          ghcr.io/romandik/devops_2:latest
+        # 6. Удаляем старый образ приложения (чтобы скачать свежий)
+        docker image rm ghcr.io/${{ github.repository }}:latest 2>/dev/null || true
         
-        # 7. Проверяем
-        sleep 5
-        if docker ps | grep -q devops-app; then
-          echo "Container deployed successfully!"
-          echo "Image: ghcr.io/romandik/devops_2:latest"
-          echo "URL: http://app.dik.course.prafdin.ru:8181"
+        # 7. Запускаем новый стек
+        docker-compose up -d
+        
+        # 8. Ждем и проверяем
+        sleep 15
+        
+        # 9. Проверяем контейнеры
+        echo "=== Running containers ==="
+        docker-compose ps
+        
+        echo "=== Application logs ==="
+        docker-compose logs app --tail=10
+        
+        # 10. Проверяем доступность
+        if curl -s -f http://localhost:8282 > /dev/null; then
+          echo "Docker Compose stack deployed successfully!"
+          echo "App URL: http://app.dik.course.prafdin.ru:8282"
+          echo "pgAdmin: http://app.dik.course.prafdin.ru:8080"
+          echo "pgAdmin credentials: admin@devops.local / admin"
           exit 0
         else
-          echo "Container failed to start"
-          docker logs devops-app || true
+          echo "Application failed to start"
+          docker-compose logs app
           exit 1
         fi
         EOF

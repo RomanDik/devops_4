@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  app:
+    image: ghcr.io/romandik/devops_4:latest  
+    build: .
+    ports:
+      - "8181:8181"  
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_HOST=db
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=devopsdb
+      - DATABASE_USER=devopsuser
+      - DATABASE_PASSWORD=devopspass
+    restart: unless-stopped
+    networks:
+      - devops-network
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=devopsdb
+      - POSTGRES_USER=devopsuser
+      - POSTGRES_PASSWORD=devopspass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devopsuser -d devopsdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - devops-network
+
+volumes:
+  postgres_data:
+
+networks:
+  devops-network:
+    driver: bridge
