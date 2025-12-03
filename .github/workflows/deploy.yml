@@ -1,0 +1,59 @@
+name: CD
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.7.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+    
+    - name: Deploy Docker container
+      run: |
+        ssh -o StrictHostKeyChecking=no -p 2425 vboxuser@course.prafdin.ru 'bash -s' << 'EOF'
+        # 1. Останавливаем старый systemd сервис (из лабы #2)
+        sudo systemctl stop devops-app.service || true
+        sudo systemctl disable devops-app.service || true
+        
+        # 2. Убиваем процессы на порту 8181
+        sudo pkill -f "python.*app.py" || true
+        
+        # 3. Останавливаем старый Docker контейнер
+        docker stop devops-app || true
+        docker rm devops-app || true
+        
+        # 4. Логинимся в GHCR
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        
+        # 5. Скачиваем новый образ
+        docker pull ghcr.io/romandik/devops_2:latest
+        
+        # 6. Запускаем новый контейнер
+        docker run -d \
+          --name devops-app \
+          --restart always \
+          -p 8181:8181 \
+          -e DEPLOY_TIME="$(date '+%Y-%m-%d %H:%M:%S')" \
+          ghcr.io/romandik/devops_2:latest
+        
+        # 7. Проверяем
+        sleep 5
+        if docker ps | grep -q devops-app; then
+          echo "Container deployed successfully!"
+          echo "Image: ghcr.io/romandik/devops_2:latest"
+          echo "URL: http://app.dik.course.prafdin.ru:8181"
+          exit 0
+        else
+          echo "Container failed to start"
+          docker logs devops-app || true
+          exit 1
+        fi
+        EOF

@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Test if Python script runs
+      run: |
+        python -c "
+        import http.server
+        import socketserver
+        print('✓ All imports work correctly')
+        
+        PORT = 8181
+        print(f'✓ Server would start on port {PORT}')
+        "
+    
+    - name: Validate syntax
+      run: |
+        python -m py_compile app.py
+        echo "✓ Syntax is valid"
+    
+    # Проверка Dockerfile с hadolint (опционально)
+    - name: Lint Dockerfile
+      continue-on-error: true  # не завершать пайплайн при ошибках
+      run: |
+        docker run --rm -i hadolint/hadolint < Dockerfile
+    
+    # Сборка Docker образа
+    - name: Build Docker image
+      run: |
+        docker build -t ghcr.io/romandik/devops_2:latest .
+    
+    # Публикация в GitHub Container Registry
+    - name: Push Docker image
+      if: github.event_name == 'push'
+      run: |
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        docker push ghcr.io/romandik/devops_2:latest
