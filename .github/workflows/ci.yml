@@ -42,10 +42,10 @@ jobs:
     
     - name: Build Docker image
       run: |
-        docker build --no-cache -t ghcr.io/romandik/devops_4:latest .
+        docker build --no-cache -t ghcr.io/romandik/devops_4:${{ github.sha }} .
     
     - name: Push Docker image
       if: github.event_name == 'push'
       run: |
         echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-        docker push ghcr.io/romandik/devops_4:latest
+        docker push ghcr.io/romandik/devops_4:${{ github.sha }}

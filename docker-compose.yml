@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   app:
-    image: ghcr.io/romandik/devops_4:latest  
+    image: ghcr.io/romandik/devops_4:${{ github.sha }} 
     build: .
     ports:
       - "8181:8181"  
