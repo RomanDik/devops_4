@@ -42,7 +42,7 @@ jobs:
     
     - name: Build Docker image
       run: |
-        docker build -t ghcr.io/romandik/devops_4:latest .
+        docker build --no-cache -t ghcr.io/romandik/devops_4:latest .
     
     - name: Push Docker image
       if: github.event_name == 'push'
