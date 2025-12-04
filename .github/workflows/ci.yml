@@ -40,12 +40,14 @@ jobs:
       run: |
         docker run --rm -i hadolint/hadolint < Dockerfile
     
+# .github/workflows/ci.yml
     - name: Build Docker image
       run: |
-        docker build --no-cache -t ghcr.io/romandik/devops_4:${{ github.sha }} .
-    
+        docker build -t ghcr.io/romandik/devops_4:${{ github.sha }} -t ghcr.io/romandik/devops_4:latest .
+
     - name: Push Docker image
       if: github.event_name == 'push'
       run: |
         echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
         docker push ghcr.io/romandik/devops_4:${{ github.sha }}
+        docker push ghcr.io/romandik/devops_4:latest
