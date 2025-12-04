@@ -19,20 +19,20 @@ jobs:
     - name: Deploy Docker Compose stack
       run: |
         ssh -o StrictHostKeyChecking=no -p 2425 vboxuser@course.prafdin.ru 'bash -s' << 'EOF'
-        set -e  # Выходим при ошибке
+        set -e
         
-        # 1. Останавливаем всё на порту 8181 (старая лаба №3)
+        # ЛОГИНИМСЯ В GHCR - ВАЖНО!
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        
+        # Останавливаем старые контейнеры
         docker stop $(docker ps --filter "publish=8181" -q) 2>/dev/null || true
         docker rm $(docker ps -a --filter "publish=8181" -q) 2>/dev/null || true
         
-        # 2. Переходим в папку
-        mkdir -p /home/vboxuser/devops-app-4
         cd /home/vboxuser/devops-app-4
         
-        # 3. Создаем docker-compose.yml БЕЗ PGADMIN
+        # Создаем docker-compose.yml
         cat > docker-compose.yml << 'COMPOSE'
         version: '3.8'
-        
         services:
           app:
             image: ghcr.io/romandik/devops_4:latest
@@ -47,11 +47,10 @@ jobs:
               - DATABASE_NAME=devopsdb
               - DATABASE_USER=devopsuser
               - DATABASE_PASSWORD=devopspass
-              - DEPLOY_TIME=$(date '+%Y-%m-%d %H:%M:%S')
+              - DEPLOY_TIME=\$(date '+%Y-%m-%d %H:%M:%S')
             restart: unless-stopped
             networks:
               - devops-network
-        
           db:
             image: postgres:15-alpine
             environment:
@@ -68,45 +67,26 @@ jobs:
             restart: unless-stopped
             networks:
               - devops-network
-        
         volumes:
           postgres_data:
-        
         networks:
           devops-network:
             driver: bridge
         COMPOSE
         
-        # 4. Логинимся в GHCR (если нужно)
-        # echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        # ПУЛИМ ОБРАЗ - теперь будет работать после логина
+        docker pull ghcr.io/romandik/devops_4:latest
         
-        # 5. Останавливаем старый стек
         docker-compose down --remove-orphans 2>/dev/null || true
-        
-        # 6. Запускаем новый стек
-        echo "Starting Docker Compose stack..."
         docker-compose up -d
         
-        # 7. Ждём готовности БД
-        echo "Waiting for PostgreSQL to be healthy..."
         sleep 20
-        
-        # 8. Проверяем
-        echo "=== Containers status ==="
-        docker-compose ps
-        
-        echo "=== Checking application ==="
-        if curl -s -f --retry 3 --retry-delay 5 http://localhost:8181 > /dev/null; then
-          echo "Docker Compose stack deployed successfully!"
-          echo "App URL: http://app.dik.course.prafdin.ru:8181"
-          echo "PostgreSQL is running with persistent volume"
-          exit 0
+        echo "=== Checking deployment ==="
+        if curl -s -f http://localhost:8181 > /dev/null; then
+          echo "Deployment successful!"
         else
-          echo "Application failed to start"
-          echo "=== Application logs ==="
-          docker-compose logs app
-          echo "=== Database logs ==="
-          docker-compose logs db
+          echo "Deployment failed"
+          docker-compose logs
           exit 1
         fi
         EOF
